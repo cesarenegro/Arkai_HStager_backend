@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 type RenderRequest = {
-  provider?: "gemini" | "openAI" | "openai";
+  provider?: "gemini" | "openAI" | "openai" | "replicate";
   image: string;
   style: string;
   styleDescription?: string;
@@ -21,6 +21,9 @@ export async function POST(req: Request) {
     const provider = (body.provider || "gemini").toLowerCase();
     if (provider === "openai") {
       return await handleOpenAI(body);
+    }
+    if (provider === "replicate") {
+      return await handleReplicate(body);
     }
     return await handleGemini(body);
   } catch (error) {
@@ -124,6 +127,59 @@ async function handleOpenAI(body: RenderRequest) {
   }
 
   return NextResponse.json({ imageBase64 });
+}
+
+async function handleReplicate(body: RenderRequest) {
+  const apiToken = process.env.REPLICATE_API_TOKEN;
+  if (!apiToken) {
+    return NextResponse.json({ error: "REPLICATE_API_TOKEN not set" }, { status: 500 });
+  }
+
+  // Import Replicate dynamically
+  const Replicate = (await import("replicate")).default;
+  const replicate = new Replicate({ auth: apiToken });
+
+  const prompt = buildPrompt(body);
+
+  // Convert base64 to data URL for Replicate
+  const imageDataUrl = `data:image/jpeg;base64,${body.image}`;
+
+  try {
+    const output = await replicate.run(
+      "rocketdigitalai/interior-design-sdxl-lightning:5d8da4e5c98fea03dcfbe3ec89e40cf0f4a0074a8930fa02aa0ee2aaf98c3d11",
+      {
+        input: {
+          image: imageDataUrl,
+          prompt: prompt
+        }
+      }
+    ) as any;
+
+    // Replicate returns a URL to the generated image
+    // We need to fetch it and convert to base64
+    const imageUrl = typeof output === 'string' ? output : output.url?.() || output[0];
+
+    if (!imageUrl) {
+      return NextResponse.json({ error: "No image URL in Replicate response" }, { status: 502 });
+    }
+
+    // Fetch the image and convert to base64
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      return NextResponse.json({ error: "Failed to fetch generated image" }, { status: 502 });
+    }
+
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const imageBase64 = Buffer.from(imageBuffer).toString('base64');
+
+    return NextResponse.json({ imageBase64 });
+  } catch (error: any) {
+    console.error("Replicate error:", error);
+    return NextResponse.json(
+      { error: "Replicate API error", detail: error.message },
+      { status: 500 }
+    );
+  }
 }
 
 function buildPrompt(body: RenderRequest) {
