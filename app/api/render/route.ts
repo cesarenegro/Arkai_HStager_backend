@@ -29,9 +29,9 @@ export async function POST(req: Request) {
 }
 
 async function handleGemini(body: RenderRequest) {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY_HS;
   if (!apiKey) {
-    return NextResponse.json({ error: "GEMINI_API_KEY not set" }, { status: 500 });
+    return NextResponse.json({ error: "GEMINI_API_KEY_HS not set" }, { status: 500 });
   }
 
   const prompt = buildPrompt(body);
